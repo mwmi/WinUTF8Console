@@ -647,21 +647,10 @@ class UTF8ConsoleOutput {
      * @param str 要输出的 UTF-8 字符串
      * @return 返回当前对象的引用，支持链式调用
      */
-    UTF8ConsoleOutput& _puts(const std::string& str) {
-        fputs(str.c_str(), stdout);
-        if (should_flush) {
-            fflush(stdout);
-        }
+    UTF8ConsoleOutput& _puts(const char* str) {
+        fputs(str, stdout);
+        if (should_flush) fflush(stdout);
         return *this;
-    }
-
-    /**
-     * @brief 输出宽字符串到控制台（先转换为 UTF-8）
-     * @param wideStr 要输出的宽字符串
-     * @return 返回当前对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& _puts(const std::wstring& wideStr) {
-        return _puts(wstring_to_utf8(wideStr));
     }
 
 public:
@@ -679,7 +668,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const std::string& str) {
-        return _puts(str);
+        return _puts(str.c_str());
     }
 
     /**
@@ -697,7 +686,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const char* str) {
-        return _puts(std::string(str));
+        return _puts(str);
     }
 
     /**
@@ -706,7 +695,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const std::wstring& wideStr) {
-        return _puts(wideStr);
+        return _puts(wstring_to_utf8(wideStr).c_str());
     }
 
     /**
@@ -717,7 +706,7 @@ public:
      * 该函数将UTF-32编码的字符串转换为UTF-8编码，然后输出到控制台
      */
     UTF8ConsoleOutput& operator<<(const char32_t* u32str) {
-        return _puts(u32string_to_utf8(u32str));
+        return _puts(u32string_to_utf8(u32str).c_str());
     }
 
     /**
@@ -728,7 +717,7 @@ public:
      * 该函数将UTF-32编码的std::u32string对象转换为UTF-8编码，然后输出到控制台
      */
     UTF8ConsoleOutput& operator<<(const std::u32string& u32str) {
-        return _puts(u32string_to_utf8(u32str));
+        return _puts(u32string_to_utf8(u32str).c_str());
     }
 
     /**
@@ -738,7 +727,7 @@ public:
      */
     UTF8ConsoleOutput& operator<<(const wchar_t* wideStr) {
         if (wideStr) {
-            return _puts(std::wstring(wideStr));
+            return _puts(wstring_to_utf8(wideStr).c_str());
         }
         return *this;
     }
@@ -749,7 +738,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const char ch) {
-        return _puts(std::string(1, ch));
+        return _puts(std::string(1, ch).c_str());
     }
 
     /**
@@ -758,7 +747,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const wchar_t ch) {
-        return _puts(std::wstring(1, ch));
+        return _puts(wstring_to_utf8(std::wstring(1, ch)).c_str());
     }
 
     /**
@@ -767,7 +756,7 @@ public:
      * @return 返回当前UTF8ConsoleOutput对象的引用，支持链式操作
      */
     UTF8ConsoleOutput& operator<<(const char32_t ch) {
-        return _puts(u32string_to_utf8(std::u32string(1, ch)));
+        return _puts(u32string_to_utf8(std::u32string(1, ch)).c_str());
     }
 
     /**
@@ -779,7 +768,7 @@ public:
     template<typename T>
     UTF8ConsoleOutput& operator<<(T value) {
         static_assert(std::is_arithmetic_v<T>, "Only arithmetic types are supported");
-        return _puts(std::to_string(value));
+        return _puts(std::to_string(value).c_str());
     }
 
     /**

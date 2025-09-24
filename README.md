@@ -55,6 +55,7 @@ UTF8Console 是一个专为 Windows 平台编写的 C++ 头文件，用于解决
   - MSVC (Visual Studio 2019 及以上版本)
   - MinGW-w64 (GCC 10 及以上版本)
 - **构建工具**: CMake 3.20 及以上版本
+- **构建系统**: Ninja（推荐）或其他 CMake 支持的生成器
 - **C++ 标准**: C++17
 
 ### 📦 构建项目
@@ -62,27 +63,30 @@ UTF8Console 是一个专为 Windows 平台编写的 C++ 头文件，用于解决
 ```bash
 # 克隆或下载项目
 git clone https://github.com/mwmi/WinUTF8Console
-cd UTF8Console
+cd WinUTF8Console
 
 # 创建构建目录
 mkdir build
 cd build
 
-# 配置项目
-cmake ..
+# 配置项目（使用 Ninja 作为构建系统）
+cmake .. -G Ninja
 
 # 构建项目
 cmake --build .
+
+# 或者使用其他构建系统（如 Visual Studio）
+# cmake .. -G "Visual Studio 16 2019"
 ```
 
 ### ▶️ 运行测试程序
 
 ```bash
 # 运行测试程序
-./UTF8Console.exe
+UTF8Console.exe
 
 # 使用 input.txt 作为输入
-./UTF8Console.exe < ../input.txt
+UTF8Console.exe < ../input.txt
 ```
 
 ### 🧪 运行测试
@@ -92,10 +96,10 @@ cmake --build .
 ctest
 
 # 或者运行单个测试程序
-./simple_test.exe
-./utf8_console_tests.exe
-./comprehensive_test.exe
-./input_test.exe
+simple_test.exe
+utf8_console_tests.exe
+comprehensive_test.exe
+input_test.exe
 ```
 
 ## 📚 核心功能
