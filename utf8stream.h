@@ -43,7 +43,7 @@ public:
  * @param wideStr 输入的宽字符串引用
  * @return std::string 转换后的UTF-8编码字符串，转换失败时返回空字符串
  */
-inline std::string wstring_to_utf8(const std::wstring& wideStr) {
+inline std::string wstring_to_string(const std::wstring& wideStr) {
     // 检查输入字符串是否为空
     if (wideStr.empty()) return {};
 
@@ -52,7 +52,7 @@ inline std::string wstring_to_utf8(const std::wstring& wideStr) {
     if (size <= 0) return {};
 
     // 创建适当大小的字符串容器，减1是因为WideCharToMultiByte返回的大小包含终止符
-    std::string str(size, 0);
+    std::string str(size - 1, 0);
 
     // 第二次调用WideCharToMultiByte执行实际的字符串转换
     WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, str.data(), size, nullptr, nullptr);
@@ -65,7 +65,7 @@ inline std::string wstring_to_utf8(const std::wstring& wideStr) {
  * @param utf8_str 输入的UTF-8编码字符串
  * @return 转换后的宽字符串，如果转换失败或输入为空则返回空字符串
  */
-inline std::wstring utf8_to_wstring(const std::string& utf8_str) {
+inline std::wstring string_to_wstring(const std::string& utf8_str) {
     // 检查输入字符串是否为空
     if (utf8_str.empty()) return {};
 
@@ -83,56 +83,6 @@ inline std::wstring utf8_to_wstring(const std::string& utf8_str) {
 }
 
 /**
- * @brief 将 UTF-32 字符串转换为 UTF-8 字符串。
- * @param u32str 输入的 UTF-32 字符串
- * @return 转换后的 UTF-8 字符串；如果输入为空或转换失败，则返回空字符串
- */
-inline std::string u32string_to_utf8(const std::u32string& u32str) {
-    if (u32str.empty()) return {};
-    std::wstring wideStr;
-    // 预分配空间以优化性能
-    wideStr.reserve(u32str.length());
-
-    for (char32_t ch : u32str) {
-        if (ch <= 0xFFFF) {
-            // BMP 字符直接转换
-            // 检查是否是代理对范围的非法字符
-            if (ch >= 0xD800 && ch <= 0xDFFF) {
-                // 这是非法的 UTF-32 字符，因为它映射到 UTF-16 的代理对范围
-                // 可以选择跳过或者用替换字符代替
-                wideStr.push_back(0xFFFD); // 使用替换字符
-            } else {
-                wideStr.push_back(static_cast<wchar_t>(ch));
-            }
-        } else {
-            // 处理超出 BMP 的字符，生成高代理和低代理对
-            // 检查是否超出 Unicode 最大码点
-            if (ch > 0x10FFFF) {
-                // 超出 Unicode 范围，使用替换字符
-                wideStr.push_back(0xFFFD);
-            } else {
-                ch -= 0x10000;
-                wideStr.push_back(static_cast<wchar_t>(0xD800 + (ch >> 10))); // 高代理
-                wideStr.push_back(static_cast<wchar_t>(0xDC00 + (ch & 0x3FF))); // 低代理
-            }
-        }
-    }
-
-    // 第一次调用WideCharToMultiByte获取转换所需的缓冲区大小
-    const int size = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-
-    if (size <= 0) return {};
-
-    // 创建适当大小的字符串容器，减1是因为WideCharToMultiByte返回的大小包含终止符
-    std::string str(size, 0);
-
-    // 第二次调用WideCharToMultiByte执行实际的字符串转换
-    WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, str.data(), size, nullptr, nullptr);
-
-    return str;
-}
-
-/**
  * @brief 将 UTF-32 字符串转换为宽字符串(std::wstring)
  * @param u32str 输入的 UTF-32 字符串
  * @return 转换后的宽字符串，如果输入为空则返回空字符串
@@ -142,7 +92,7 @@ inline std::wstring u32string_to_wstring(const std::u32string& u32str) {
 
     std::wstring wideStr;
     // 预分配空间以优化性能
-    wideStr.reserve(u32str.length());
+    wideStr.reserve(u32str.length() * 2);
 
     for (char32_t ch : u32str) {
         if (ch <= 0xFFFF) {
@@ -168,7 +118,35 @@ inline std::wstring u32string_to_wstring(const std::u32string& u32str) {
             }
         }
     }
+    wideStr.shrink_to_fit();
     return wideStr;
+}
+
+
+/**
+ * @brief 将 UTF-32 字符串转换为 UTF-8 字符串。
+ * @param u32str 输入的 UTF-32 字符串
+ * @return 转换后的 UTF-8 字符串；如果输入为空或转换失败，则返回空字符串
+ */
+inline std::string u32string_to_string(const std::u32string& u32str) {
+    if (u32str.empty()) return {};
+
+    std::wstring wideStr = u32string_to_wstring(u32str);
+
+    if (wideStr.empty()) return {};
+
+    // 第一次调用WideCharToMultiByte获取转换所需的缓冲区大小
+    const int size = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+
+    if (size <= 0) return {};
+
+    // 创建适当大小的字符串容器，减1是因为WideCharToMultiByte返回的大小包含终止符
+    std::string str(size - 1, 0);
+
+    // 第二次调用WideCharToMultiByte执行实际的字符串转换
+    WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, str.data(), size, nullptr, nullptr);
+
+    return str;
 }
 
 /**
@@ -177,7 +155,7 @@ inline std::wstring u32string_to_wstring(const std::u32string& u32str) {
  * @return 转换后的 UTF-32 字符串
  * @throws UException 如果输入字符串不是合法的 UTF-8 编码
  */
-inline std::u32string utf8_to_u32string(const std::string& utf8_str) {
+inline std::u32string string_to_u32string(const std::string& utf8_str) {
     std::u32string u32str;
     u32str.reserve(utf8_str.size()); // 预分配空间以优化性能
     for (size_t i = 0; i < utf8_str.size();) {
@@ -200,35 +178,35 @@ inline std::u32string utf8_to_u32string(const std::string& utf8_str) {
         } else if (ch <= 0xEF) {
             // 三字节 UTF-8 序列
             if (i + 2 >= utf8_str.size()) {
-                throw UException("Invalid UTF-8 string");
+                throw UException("Invalid UTF-8 string: not enough bytes");
             }
             const unsigned char ch2 = utf8_str[i + 1];
             const unsigned char ch3 = utf8_str[i + 2];
             if (ch2 < 0x80 || ch2 > 0xBF || ch3 < 0x80 || ch3 > 0xBF) {
-                throw UException("Invalid UTF-8 string");
+                throw UException("Invalid UTF-8 string: invalid byte sequence");
             }
             const char32_t codepoint = (ch & 0x0F) << 12 | (ch2 & 0x3F) << 6 | ch3 & 0x3F;
             // 检查是否是过长编码或代理区字符
             if (codepoint < 0x800 || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
-                throw UException("Invalid UTF-8 string");
+                throw UException("Invalid UTF-8 string: invalid codepoint");
             }
             u32str += codepoint;
             i += 3;
         } else if (ch <= 0xF7) {
             // 四字节 UTF-8 序列
             if (i + 3 >= utf8_str.size()) {
-                throw UException("Invalid UTF-8 string");
+                throw UException("Invalid UTF-8 string: not enough bytes");
             }
             const unsigned char ch2 = utf8_str[i + 1];
             const unsigned char ch3 = utf8_str[i + 2];
             const unsigned char ch4 = utf8_str[i + 3];
             if (ch2 < 0x80 || ch2 > 0xBF || ch3 < 0x80 || ch3 > 0xBF || ch4 < 0x80 || ch4 > 0xBF) {
-                throw UException("Invalid UTF-8 string");
+                throw UException("Invalid UTF-8 string: invalid byte sequence");
             }
             const char32_t codepoint = (ch & 0x07) << 18 | (ch2 & 0x3F) << 12 | (ch3 & 0x3F) << 6 | ch4 & 0x3F;
             // 检查是否是过长编码或超出 Unicode 最大码点
             if (codepoint < 0x10000 || codepoint > 0x10FFFF) {
-                throw UException("Invalid UTF-8 string");
+                throw UException("Invalid UTF-8 string: invalid codepoint");
             }
             u32str += codepoint;
             i += 4;
@@ -237,6 +215,52 @@ inline std::u32string utf8_to_u32string(const std::string& utf8_str) {
             throw UException("Invalid UTF-8 string");
         }
     }
+    u32str.shrink_to_fit();
+    return u32str;
+}
+
+/**
+ * 将std::wstring转换为std::u32string
+ *
+ * @param wstr 输入的宽字符串，假设为UTF-16编码
+ * @return 转换后的UTF-32字符串
+ * @throws UException 当UTF-16字符串格式无效时抛出异常
+ */
+inline std::u32string wstring_to_u32string(const std::wstring& wstr) {
+    std::u32string u32str;
+    u32str.reserve(wstr.size()); // 预分配空间以优化性能
+
+    for (size_t i = 0; i < wstr.size(); i++) {
+        const wchar_t ch = wstr[i];
+
+        // 检查是否是基本多文种平面（BMP）字符
+        if (ch < 0xD800 || ch > 0xDFFF) {
+            // 单个字符（BMP）
+            u32str += static_cast<char32_t>(ch);
+        } else if (ch >= 0xD800 && ch <= 0xDBFF) {
+            // 高代理项（high surrogate）
+            if (i + 1 >= wstr.size()) {
+                throw UException("Invalid UTF-16 string: truncated surrogate pair");
+            }
+
+            const wchar_t low_surrogate = wstr[i + 1];
+            if (low_surrogate < 0xDC00 || low_surrogate > 0xDFFF) {
+                throw UException("Invalid UTF-16 string: missing low surrogate");
+            }
+
+            // 计算UTF-32码点
+            char32_t code_point = 0x10000;
+            code_point += (static_cast<char32_t>(ch) - 0xD800) << 10;
+            code_point += static_cast<char32_t>(low_surrogate) - 0xDC00;
+
+            u32str += code_point;
+            i++; // 跳过低代理项
+        } else {
+            // 孤立的低代理项（无效）
+            throw UException("Invalid UTF-16 string: lone low surrogate");
+        }
+    }
+
     u32str.shrink_to_fit();
     return u32str;
 }
@@ -258,7 +282,7 @@ int print(const std::string& format, Args... args) {
 /// @return 成功输出`UTF-8`编码字符占用的字节数，失败时返回负值
 template<typename... Args>
 int print(const std::wstring& format, Args... args) {
-    return print(wstring_to_utf8(format).c_str(), args...);
+    return print(wstring_to_string(format).c_str(), args...);
 }
 
 /// @brief 输出函数
@@ -268,7 +292,7 @@ int print(const std::wstring& format, Args... args) {
 /// @return 成功输出`UTF-8`编码字符占用的字节数，失败时返回负值
 template<typename... Args>
 int print(const std::u32string& format, Args... args) {
-    return print(u32string_to_utf8(format).c_str(), args...);
+    return print(u32string_to_string(format).c_str(), args...);
 }
 
 /**
@@ -341,12 +365,12 @@ class UTF8ConsoleInput {
      */
     bool fillBuffer() {
         std::string chunk;
+        char ch;
         for (int i = 0; i < chunkSize; i++) {
-            const int ch = fgetc(stdin);
-            if (ch == EOF) break;
-            const char c = static_cast<char>(ch);
-            chunk.push_back(c);
-            if (c == '\n') break;
+            if (fread(&ch, sizeof(char), 1, stdin) == 0) break;
+            if (ch == EOF) return false;
+            chunk.push_back(ch);
+            if (ch == '\n') break;
         }
         if (chunk.empty()) return false;
         buffer.append(chunk);
@@ -454,7 +478,7 @@ inline std::string UTF8ConsoleInput::readWord<std::string>() {
  */
 template<>
 inline std::wstring UTF8ConsoleInput::readWord<std::wstring>() {
-    return utf8_to_wstring(readWord<std::string>());
+    return string_to_wstring(readWord<std::string>());
 }
 
 /**
@@ -467,7 +491,7 @@ inline std::wstring UTF8ConsoleInput::readWord<std::wstring>() {
  */
 template<>
 inline std::u32string UTF8ConsoleInput::readWord<std::u32string>() {
-    return utf8_to_u32string(readWord<std::string>());
+    return string_to_u32string(readWord<std::string>());
 }
 
 /**
@@ -500,7 +524,7 @@ inline std::string UTF8ConsoleInput::readLine<std::string>() {
  */
 template<>
 inline std::wstring UTF8ConsoleInput::readLine<std::wstring>() {
-    return utf8_to_wstring(readLine<std::string>());
+    return string_to_wstring(readLine<std::string>());
 }
 
 /**
@@ -513,7 +537,7 @@ inline std::wstring UTF8ConsoleInput::readLine<std::wstring>() {
  */
 template<>
 inline std::u32string UTF8ConsoleInput::readLine<std::u32string>() {
-    return utf8_to_u32string(readLine<std::string>());
+    return string_to_u32string(readLine<std::string>());
 }
 
 /**
@@ -557,7 +581,7 @@ inline std::vector<std::wstring> UTF8ConsoleInput::readLines<
     std::wstring>(const bool empty_break, const int break_word) {
     std::vector<std::wstring> result;
     for (const auto& line : readLines<std::string>(empty_break, break_word)) {
-        result.push_back(std::move(utf8_to_wstring(line)));
+        result.push_back(std::move(string_to_wstring(line)));
     }
     return result;
 }
@@ -577,7 +601,7 @@ inline std::vector<std::u32string> UTF8ConsoleInput::readLines<std::u32string>(
     const bool empty_break, const int break_word) {
     std::vector<std::u32string> result;
     for (const auto& line : readLines<std::string>(empty_break, break_word)) {
-        result.push_back(std::move(utf8_to_u32string(line)));
+        result.push_back(std::move(string_to_u32string(line)));
     }
     return result;
 }
@@ -592,15 +616,15 @@ UTF8ConsoleInput& UTF8ConsoleInput::operator>>(T& value) {
         if constexpr (std::is_same_v<T, std::string>) {
             value = token;
         } else if constexpr (std::is_same_v<T, std::wstring>) {
-            value = utf8_to_wstring(token);
+            value = string_to_wstring(token);
         } else if constexpr (std::is_same_v<T, std::u32string>) {
-            value = utf8_to_u32string(token);
+            value = string_to_u32string(token);
         } else if constexpr (std::is_same_v<T, char>) {
             value = token[0];
         } else if constexpr (std::is_same_v<T, wchar_t>) {
-            value = utf8_to_wstring(token).c_str()[0];
+            value = string_to_wstring(token).c_str()[0];
         } else if constexpr (std::is_same_v<T, char32_t>) {
-            value = utf8_to_u32string(token).c_str()[0];
+            value = string_to_u32string(token).c_str()[0];
         } else if constexpr (std::is_same_v<T, int>) {
             value = std::stoi(token);
         } else if constexpr (std::is_same_v<T, long>) {
@@ -618,9 +642,8 @@ UTF8ConsoleInput& UTF8ConsoleInput::operator>>(T& value) {
             throw UException("Unsupported type for parsing");
         }
     } catch (const std::exception& e) {
-        const std::string error_msg = std::string("Parse error at token '") +
-            token + "': " + e.what();
-        println(error_msg);
+        const std::string error_msg = "Parse error at token '" + token + "': " + e.what();
+        fputs(error_msg.c_str(), stderr);
     }
     return *this;
 }
@@ -648,7 +671,7 @@ class UTF8ConsoleOutput {
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& _puts(const char* str) {
-        fputs(str, stdout);
+        fwrite(str, sizeof(char), strlen(str), stdout);
         if (should_flush) fflush(stdout);
         return *this;
     }
@@ -695,7 +718,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const std::wstring& wideStr) {
-        return _puts(wstring_to_utf8(wideStr).c_str());
+        return _puts(wstring_to_string(wideStr).c_str());
     }
 
     /**
@@ -706,7 +729,7 @@ public:
      * 该函数将UTF-32编码的字符串转换为UTF-8编码，然后输出到控制台
      */
     UTF8ConsoleOutput& operator<<(const char32_t* u32str) {
-        return _puts(u32string_to_utf8(u32str).c_str());
+        return _puts(u32string_to_string(u32str).c_str());
     }
 
     /**
@@ -717,7 +740,7 @@ public:
      * 该函数将UTF-32编码的std::u32string对象转换为UTF-8编码，然后输出到控制台
      */
     UTF8ConsoleOutput& operator<<(const std::u32string& u32str) {
-        return _puts(u32string_to_utf8(u32str).c_str());
+        return _puts(u32string_to_string(u32str).c_str());
     }
 
     /**
@@ -727,7 +750,7 @@ public:
      */
     UTF8ConsoleOutput& operator<<(const wchar_t* wideStr) {
         if (wideStr) {
-            return _puts(wstring_to_utf8(wideStr).c_str());
+            return _puts(wstring_to_string(wideStr).c_str());
         }
         return *this;
     }
@@ -747,7 +770,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const wchar_t ch) {
-        return _puts(wstring_to_utf8(std::wstring(1, ch)).c_str());
+        return _puts(wstring_to_string(std::wstring(1, ch)).c_str());
     }
 
     /**
@@ -756,7 +779,7 @@ public:
      * @return 返回当前UTF8ConsoleOutput对象的引用，支持链式操作
      */
     UTF8ConsoleOutput& operator<<(const char32_t ch) {
-        return _puts(u32string_to_utf8(std::u32string(1, ch)).c_str());
+        return _puts(u32string_to_string(std::u32string(1, ch)).c_str());
     }
 
     /**
