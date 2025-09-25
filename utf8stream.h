@@ -237,7 +237,7 @@ inline std::u32string wstring_to_u32string(const std::wstring& wstr) {
         if (ch < 0xD800 || ch > 0xDFFF) {
             // 单个字符（BMP）
             u32str += static_cast<char32_t>(ch);
-        } else if (ch >= 0xD800 && ch <= 0xDBFF) {
+        } else if (ch <= 0xDBFF) {
             // 高代理项（high surrogate）
             if (i + 1 >= wstr.size()) {
                 throw UException("Invalid UTF-16 string: truncated surrogate pair");

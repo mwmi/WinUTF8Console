@@ -156,12 +156,12 @@ int main() {
 #include "utf8stream.h"
 
 // 宽字符串与 UTF-8 字符串转换
-std::string utf8_str = wstring_to_utf8(L"Hello 世界");
-std::wstring wstr = utf8_to_wstring("Hello 世界");
+std::string str = wstring_to_string(L"Hello 世界");
+std::wstring wstr = string_to_wstring("Hello 世界");
 
 // UTF-32 字符串与 UTF-8 字符串转换
-std::string utf8_from_u32 = u32string_to_utf8(U"Hello 世界");
-std::u32string u32str = utf8_to_u32string("Hello 世界");
+std::string str_from_u32 = u32string_to_string(U"Hello 世界");
+std::u32string u32str = string_to_u32string("Hello 世界");
 
 // UTF-32 字符串与宽字符串转换
 std::wstring wstr_from_u32 = u32string_to_wstring(U"Hello 世界");
