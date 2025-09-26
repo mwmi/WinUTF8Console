@@ -61,7 +61,7 @@ class FastString {
         // realloc失败，使用传统分配
         const auto new_data = static_cast<char*>(malloc(new_capacity));
         if (data_) {
-            if (size_ > 0) memcpy(new_data, data_, size_);
+            if (size_ > 0 && new_data) memcpy(new_data, data_, size_);
             free(data_);
         }
         data_ = new_data;
@@ -152,13 +152,15 @@ public:
     FastString& push_back(const char c) {
         if (c == '\0') return *this;
         if (size_ >= capacity_) grow(size_ + 1);
-        data_[size_++] = c;
-        data_[size_] = '\0';
+        if (data_) {
+            data_[size_++] = c;
+            data_[size_] = '\0';
+        }
         return *this;
     }
 
     FastString& append(const int value) noexcept {
-        char buffer[16];
+        char buffer[16]{};
         char* end = buffer + 16;
         char* ptr = end;
 
@@ -181,18 +183,22 @@ public:
         const size_t len = strlen(str); // 第一次遍历字符串
         if (len == 0) return *this;
         if (size_ + len >= capacity_) grow(size_ + len + 1);
-        memcpy(data_ + size_, str, len); // 第二次遍历（拷贝）
-        size_ += len;
-        data_[size_] = '\0';
+        if (data_) {
+            memcpy(data_ + size_, str, len); // 第二次遍历（拷贝）
+            size_ += len;
+            data_[size_] = '\0';
+        }
         return *this;
     }
 
     FastString& append(const char* str, const size_t len) noexcept {
         if (!str || len <= 0) return *this;
         if (size_ + len >= capacity_) grow(size_ + len + 1);
-        memcpy(data_ + size_, str, len);
-        size_ += len;
-        data_[size_] = '\0';
+        if (data_) {
+            memcpy(data_ + size_, str, len);
+            size_ += len;
+            data_[size_] = '\0';
+        }
         return *this;
     }
 
@@ -856,25 +862,46 @@ inline UTF8ConsoleInput ucin;
  */
 class UTF8ConsoleOutput {
     bool should_flush = false; ///< 控制是否在每次输出后自动刷新 stdout 缓冲区
+    FILE* stream;
+
+    UTF8ConsoleOutput& _writes(const char* str, const size_t len) {
+        fwrite(str, sizeof(char), len, stream);
+        return *this;
+    }
 
     /**
      * @brief 输出 UTF-8 字符串到控制台
      * @param str 要输出的 UTF-8 字符串
      * @return 返回当前对象的引用，支持链式调用
      */
-    UTF8ConsoleOutput& _puts(const char* str) {
-        fwrite(str, sizeof(char), strlen(str), stdout);
-        if (should_flush) fflush(stdout);
-        return *this;
+    UTF8ConsoleOutput& _writes(const char* str) {
+        return _writes(str, strlen(str));
+    }
+
+    UTF8ConsoleOutput& _writes(const std::string& str) {
+        return _writes(str.c_str(), str.size());
     }
 
 public:
+    UTF8ConsoleOutput() : stream(stdout) {
+    }
+
+    explicit UTF8ConsoleOutput(FILE* stream) : stream(stream) {
+    }
+
+    /**
+     * @brief 获取输出流指针
+     * @return FILE* 返回指向输出流指针
+     * @note 该函数使用[[nodiscard]]属性标记，表示返回值不应被忽略
+     */
+    [[nodiscard]] FILE* getStream() const { return stream; }
+
     /**
      * @brief 刷新 stdout 缓冲区
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& flush() {
-        fflush(stdout);
+        fflush(stream);
         return *this;
     }
 
@@ -888,21 +915,31 @@ public:
     }
 
     /**
-     * @brief 流式输出操作符 - 字符串
-     * @param str 要输出的字符串
-     * @return 返回当前对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const std::string& str) {
-        return _puts(str.c_str());
-    }
-
-    /**
      * @brief 流式输出操作符 - C 风格字符串
      * @param str 要输出的 C 风格字符串指针
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const char* str) {
-        return _puts(str);
+        return _writes(str);
+    }
+
+    /**
+     * @brief 流式输出操作符 - 字符串
+     * @param str 要输出的字符串
+     * @return 返回当前对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const std::string& str) {
+        return _writes(str);
+    }
+
+    /**
+     * @brief 流式输出操作符 - C 风格宽字符串
+     * @param wideStr 要输出的 C 风格宽字符串指针
+     * @return 返回当前对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const wchar_t* wideStr) {
+        if (wideStr) _writes(wstring_to_string(wideStr));
+        return *this;
     }
 
     /**
@@ -911,7 +948,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const std::wstring& wideStr) {
-        return _puts(wstring_to_string(wideStr).c_str());
+        return _writes(wstring_to_string(wideStr));
     }
 
     /**
@@ -922,7 +959,8 @@ public:
      * 该函数将UTF-32编码的字符串转换为UTF-8编码，然后输出到控制台
      */
     UTF8ConsoleOutput& operator<<(const char32_t* u32str) {
-        return _puts(u32string_to_string(u32str).c_str());
+        if (u32str) _writes(u32string_to_string(u32str));
+        return *this;
     }
 
     /**
@@ -933,17 +971,7 @@ public:
      * 该函数将UTF-32编码的std::u32string对象转换为UTF-8编码，然后输出到控制台
      */
     UTF8ConsoleOutput& operator<<(const std::u32string& u32str) {
-        return _puts(u32string_to_string(u32str).c_str());
-    }
-
-    /**
-     * @brief 流式输出操作符 - C 风格宽字符串
-     * @param wideStr 要输出的 C 风格宽字符串指针
-     * @return 返回当前对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const wchar_t* wideStr) {
-        if (wideStr) return _puts(wstring_to_string(wideStr).c_str());
-        return *this;
+        return _writes(u32string_to_string(u32str));
     }
 
     /**
@@ -952,7 +980,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const char ch) {
-        return _puts(std::string(1, ch).c_str());
+        return _writes(&ch, 1);
     }
 
     /**
@@ -961,7 +989,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const wchar_t ch) {
-        return _puts(wstring_to_string(std::wstring(1, ch)).c_str());
+        return _writes(wstring_to_string(std::wstring(1, ch)));
     }
 
     /**
@@ -970,7 +998,7 @@ public:
      * @return 返回当前UTF8ConsoleOutput对象的引用，支持链式操作
      */
     UTF8ConsoleOutput& operator<<(const char32_t ch) {
-        return _puts(u32string_to_string(std::u32string(1, ch)).c_str());
+        return _writes(u32string_to_string(std::u32string(1, ch)));
     }
 
     /**
@@ -979,7 +1007,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const bool value) {
-        return _puts(value ? "true" : "false");
+        return _writes(value ? "true" : "false", value ? 4 : 5);
     }
 
     /**
@@ -988,8 +1016,9 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const void* ptr) {
-        print("%p", ptr);
-        return *this;
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%p", ptr);
+        return _writes(buf, strlen(buf));
     }
 
     /**
@@ -1002,102 +1031,20 @@ public:
     }
 
     /**
-     * 重载左移运算符，用于输出float类型数值
-     * @param value 要输出的float类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     * 重载输出流操作符，用于将算术类型的数据输出到UTF8控制台
+     *
+     * @tparam T 数据类型，必须是算术类型（整数、浮点数等）
+     * @param value 要输出的算术值
+     * @return UTF8ConsoleOutput& 返回当前对象的引用，支持链式调用
+     *
+     * 该函数使用SFINAE技术，只对算术类型启用重载，
+     * 通过std::to_string将数值转换为字符串后输出
      */
-    UTF8ConsoleOutput& operator<<(const float value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出double类型数值
-     * @param value 要输出的double类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const double value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出long double类型数值
-     * @param value 要输出的long double类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const long double value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出int类型数值
-     * @param value 要输出的int类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const int value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出unsigned int类型数值
-     * @param value 要输出的unsigned int类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const unsigned int value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出long类型数值
-     * @param value 要输出的long类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const long value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出unsigned long类型数值
-     * @param value 要输出的unsigned long类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const unsigned long value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出long long类型数值
-     * @param value 要输出的long long类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const long long value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出unsigned long long类型数值
-     * @param value 要输出的unsigned long long类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const unsigned long long value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出short类型数值
-     * @param value 要输出的short类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const short value) {
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
-     * 重载左移运算符，用于输出unsigned short类型数值
-     * @param value 要输出的unsigned short类型数值
-     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& operator<<(const unsigned short value) {
-        return _puts(std::to_string(value).c_str());
+    template<typename T>
+    std::enable_if_t<std::is_arithmetic_v<T>, UTF8ConsoleOutput&>
+        operator<<(const T value) {
+        // 将算术值转换为字符串并写入输出流
+        return _writes(std::to_string(value));
     }
 
     /**
@@ -1107,22 +1054,19 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     template<typename T>
-    UTF8ConsoleOutput& operator<<(const std::vector<T>& lines) {
-        // 判断T类型不支持的报警告
-        static_assert(
-            std::is_same_v<T, std::string> || std::is_same_v<T, std::wstring> || std::is_same_v<T, std::u32string>,
-            "Unsupported type!");
+    std::enable_if_t<std::is_same_v<T, std::string> || std::is_same_v<T, std::wstring> || std::is_same_v<T,
+        std::u32string>, UTF8ConsoleOutput&>
+        operator<<(const std::vector<T>& lines) {
         // 第一行不输出换行符
         bool first = true;
         // 遍历并向量中的每个字符串输出到控制台
         for (const auto& line : lines) {
-            first ? first = false : fputc('\n', stdout);
+            first ? first = false : fputc('\n', stream);
             *this << line;
         }
         return *this;
     }
 };
-
 
 /**
  * @brief 全局 UTF-8 控制台输出流对象
@@ -1131,6 +1075,7 @@ public:
  * 该对象提供了对控制台输出的封装，支持Unicode字符的正确显示，功能与std::cout相当。
  */
 inline UTF8ConsoleOutput ucout;
+
 /**
  * @brief 输出换行符并刷新标准输出缓冲区
  *
@@ -1141,10 +1086,25 @@ inline UTF8ConsoleOutput ucout;
  * @return UTF8ConsoleOutput对象的引用，支持链式调用
  */
 inline UTF8ConsoleOutput& uendl(UTF8ConsoleOutput& out) {
-    fputc('\n', stdout);
-    fflush(stdout);
+    fputc('\n', out.getStream());
+    fflush(out.getStream());
     return out;
 }
+
+/**
+ * @brief 刷新UTF-8控制台输出流
+ *
+ * 此函数用于刷新指定的UTF8ConsoleOutput输出流，确保所有缓冲区中的数据都被写出。
+ * 它是对标准库fflush函数的封装，专门用于UTF-8编码的控制台输出。
+ *
+ * @param out 要刷新的UTF8ConsoleOutput对象引用
+ * @return 返回刷新后的UTF8ConsoleOutput对象引用，支持链式调用
+ */
+inline UTF8ConsoleOutput& uflush(UTF8ConsoleOutput& out) {
+    fflush(out.getStream());
+    return out;
+}
+
 
 /**
  * @brief UTF8控制台编码管理类
