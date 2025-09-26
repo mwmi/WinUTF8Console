@@ -38,185 +38,117 @@ public:
     }
 };
 
-/**
- * @brief 快速字符串类，用于高效处理字符串操作。
- *
- * 提供类似于 std::string 的功能，但针对特定场景进行了优化，
- * 支持动态扩容、移动语义等特性。
- */
 class FastString {
-    static constexpr size_t default_capacity = 1024; ///< 默认初始容量大小
+    static constexpr size_t default_capacity = 256; ///< 默认初始容量大小
     char* data_ = nullptr; ///< 字符串数据指针
     size_t size_ = 0; ///< 当前字符串长度（不含结尾'\0'）
     size_t capacity_ = 0; ///< 当前分配的内存容量
 
-    /**
-     * @brief 扩容函数，确保至少能容纳指定容量的内容。
-     *
-     * 新容量会根据当前容量翻倍增长，并满足最小容量要求。
-     * 如果新容量小于默认容量，则使用默认容量。
-     * 最终调用 reserve 分配新的空间。
-     *
-     * @param min_capacity 需要保证的最小容量
-     */
-    void grow(const size_t min_capacity) {
-        size_t new_capacity = capacity_ * 2;
-        if (new_capacity < default_capacity) new_capacity = default_capacity;
+    FastString& grow(const size_t min_capacity) {
+        size_t new_capacity = capacity_ + (capacity_ >> 1); // 1.5倍增长
         if (new_capacity < min_capacity) new_capacity = min_capacity;
-        reserve(new_capacity);
+        if (new_capacity < default_capacity) new_capacity = default_capacity;
+
+        // 使用realloc风格的优化：尝试原地扩展
+        if (data_) {
+            if (const auto new_data = static_cast<char*>(realloc(data_, new_capacity))) {
+                data_ = new_data;
+                capacity_ = new_capacity;
+                return *this;
+            }
+        }
+
+        // realloc失败，使用传统分配
+        const auto new_data = static_cast<char*>(malloc(new_capacity));
+        if (data_) {
+            if (size_ > 0) memcpy(new_data, data_, size_);
+            free(data_);
+        }
+        data_ = new_data;
+        capacity_ = new_capacity;
+        return *this;
     }
 
 public:
-    /**
-     * @brief 构造一个空的 FastString 对象。
-     */
     FastString() = default;
 
-    /**
-     * @brief 使用 C 风格字符串构造 FastString。
-     *
-     * 根据输入字符串长度决定初始容量。如果长度大于等于默认容量，
-     * 则设置为 len+1；否则使用默认容量。
-     *
-     * @param str 输入的 C 风格字符串
-     */
     explicit FastString(const char* str) {
         const size_t len = strlen(str);
         if (len == 0) return;
-        capacity_ = len >= default_capacity ? len + 1 : default_capacity;
-        data_ = new char[capacity_]();
-        memcpy(data_, str, len);
-        size_ = len;
+        grow(len + 1);
+        if (data_) {
+            memcpy(data_, str, len);
+            data_[size_] = '\0';
+            size_ = len;
+        }
     }
 
-    /**
-     * @brief 使用 std::string 构造 FastString。
-     *
-     * 调用另一个构造函数完成初始化。
-     *
-     * @param str 输入的标准库字符串对象
-     */
     explicit FastString(const std::string& str) : FastString(str.c_str()) {
     }
 
-    /**
-     * @brief 拷贝构造函数。
-     *
-     * 复制另一个 FastString 的内容到当前对象中。
-     *
-     * @param other 另一个 FastString 实例
-     */
-    FastString(const FastString& other) : FastString(other.c_str()) {
+    FastString(const FastString& other) {
+        append(other);
     }
 
-    /**
-     * @brief 移动构造函数。
-     *
-     * 将另一个 FastString 的资源转移给当前对象，原对象置为空状态。
-     *
-     * @param other 另一个 FastString 实例（右值引用）
-     */
     FastString(FastString&& other) noexcept : data_(other.data_), size_(other.size_), capacity_(other.capacity_) {
         other.data_ = nullptr;
         other.size_ = 0;
         other.capacity_ = 0;
     }
 
-    /**
-     * @brief 析构函数，释放占用的内存。
-     */
-    ~FastString() { free(); }
-
-    /**
-     * @brief 显式转换为 std::string 类型。
-     *
-     * 若内部数据有效且非空则创建对应标准库字符串，否则返回空字符串。
-     *
-     * @return 转换后的 std::string 对象
-     */
-    explicit operator std::string() const {
-        return data_ && size_ > 0 ? std::string(data_, size_) : "";
+    explicit FastString(const int value) {
+        append(value);
     }
 
-    /**
-     * @brief 获取当前字符串的实际长度。
-     *
-     * @return 返回当前字符串中的字符数量（不包括终止符 \0）。
-     */
+    FastString& operator=(const FastString& other) {
+        if (this != &other) {
+            // 防止自我赋值
+            clear().append(other);
+        }
+        return *this;
+    }
+
+    FastString& operator=(const char* str) {
+        clear().append(str);
+        return *this;
+    }
+
+    FastString& operator+(const FastString& other) {
+        return append(other);
+    }
+
+    ~FastString() { release(); }
+
+    explicit operator std::string() const {
+        return to_string();
+    }
+
     [[nodiscard]] size_t size() const { return size_; }
 
-    /**
-     * @brief 获取以 null 结尾的 C 风格字符串表示。
-     *
-     * @return 返回指向内部缓冲区的常量指针或空字符串 ""。
-     */
     [[nodiscard]] const char* c_str() const { return data_ && size_ > 0 ? data_ : ""; }
 
-    /**
-     * @brief 获取可修改的数据指针。
-     *
-     * @return 返回指向内部缓冲区的非常量指针。
-     */
     [[nodiscard]] char* data() const { return data_; }
 
-    /**
-     * @brief 判断字符串是否为空。
-     *
-     * @return 如果字符串长度为 0，则返回 true，否则 false。
-     */
     [[nodiscard]] bool empty() const { return size_ == 0; }
 
-    /**
-     * @brief 大小清零但保留已分配的空间。
-     *
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& clear() {
         size_ = 0;
         return *this;
     }
 
-    /**
-     * @brief 完全释放所占内存并清零相关字段。
-     *
-     * @return 返回自身引用以便链式调用。
-     */
-    FastString& free() {
-        delete[] data_;
+    FastString& release() {
+        if (data_) free(data_);
         data_ = nullptr;
         size_ = 0;
         capacity_ = 0;
         return *this;
     }
 
-    /**
-     * @brief 预留指定容量的内存空间。
-     *
-     * 如果请求的新容量不大于现有容量则不做任何事。
-     * 否则重新分配更大的内存并将旧数据复制过去。
-     *
-     * @param new_capacity 请求预留的新容量大小
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& reserve(const size_t new_capacity) {
         if (new_capacity <= capacity_) return *this;
-        const auto new_data = new char[new_capacity]();
-        memcpy(new_data, data_, size_);
-        delete[] data_;
-        data_ = new_data;
-        capacity_ = new_capacity;
-        return *this;
+        return grow(new_capacity);
     }
 
-    /**
-     * @brief 在末尾追加单个字符。
-     *
-     * 不允许插入空字符('\0')。若当前容量不足将自动扩展。
-     * 插入后更新 size 并在末尾补上 '\0'。
-     *
-     * @param c 待追加的字符
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& push_back(const char c) {
         if (c == '\0') return *this;
         if (size_ >= capacity_) grow(size_ + 1);
@@ -225,18 +157,38 @@ public:
         return *this;
     }
 
-    /**
-     * @brief 追加 C 风格字符串。
-     *
-     * 计算待追加字符串长度，如需扩容则先进行扩展。
-     * 然后拷贝字符串内容并在最后加上 '\0'。
-     *
-     * @param str 待追加的 C 风格字符串
-     * @return 返回自身引用以便链式调用。
-     */
+    FastString& append(const int value) noexcept {
+        char buffer[16];
+        char* end = buffer + 16;
+        char* ptr = end;
+
+        // 手动整数转字符串，避免函数调用开销
+        const bool negative = value < 0;
+        unsigned int abs_value = negative ? -value : value;
+
+        do {
+            *--ptr = static_cast<char>('0' + abs_value % 10);
+            abs_value /= 10;
+        } while (abs_value > 0);
+
+        if (negative) *--ptr = '-';
+
+        const size_t len = end - ptr;
+        return append(ptr, len);
+    }
+
     FastString& append(const char* str) {
-        const size_t len = strlen(str);
+        const size_t len = strlen(str); // 第一次遍历字符串
         if (len == 0) return *this;
+        if (size_ + len >= capacity_) grow(size_ + len + 1);
+        memcpy(data_ + size_, str, len); // 第二次遍历（拷贝）
+        size_ += len;
+        data_[size_] = '\0';
+        return *this;
+    }
+
+    FastString& append(const char* str, const size_t len) noexcept {
+        if (!str || len <= 0) return *this;
         if (size_ + len >= capacity_) grow(size_ + len + 1);
         memcpy(data_ + size_, str, len);
         size_ += len;
@@ -244,83 +196,35 @@ public:
         return *this;
     }
 
-    /**
-     * @brief 追加另一个 FastString 内容。
-     *
-     * 直接调用 append(char*) 版本实现。
-     *
-     * @param other 待追加的 FastString 对象
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& append(const FastString& other) {
-        return append(other.c_str());
+        return append(other.c_str(), other.size_);
     }
 
-    /**
-     * @brief 追加 std::string 内容。
-     *
-     * 直接调用 append(char*) 版本实现。
-     *
-     * @param str 待追加的 std::string 对象
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& append(const std::string& str) {
         return append(str.c_str());
     }
 
-    /**
-     * @brief 转换为 std::string 对象。
-     *
-     * @return 返回与当前 FastString 内容一致的 std::string 对象。
-     */
     [[nodiscard]] std::string to_string() const {
         return {data_, size_};
     }
 
-    /**
-     * @brief += 运算符重载：追加字符。
-     *
-     * @param c 待追加的字符
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& operator+=(const char c) {
         return push_back(c);
     }
 
-    /**
-     * @brief += 运算符重载：追加C字符串。
-     *
-     * @param str 待追加的 C 风格字符串
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& operator+=(const char* str) {
         return append(str);
     }
 
-    /**
-     * @brief += 运算符重载：追加另一个FastString。
-     *
-     * @param other 待追加的 FastString 对象
-     * @return 返回自身引用以便链式调用。
-     */
     FastString& operator+=(const FastString& other) {
         return append(other);
     }
 
-    /**
-     * @brief [] 运算符重载：访问指定索引位置的字符。
-     *
-     * 若索引超出范围抛出异常。
-     *
-     * @param index 字符所在的索引位置
-     * @return 返回该位置上的字符
-     * @throws UException 索引越界时抛出异常
-     */
     char operator[](const size_t index) const {
         if (index >= size_) {
             throw UException("FastString index out of range");
         }
-        return data_[index];
+        return data_ ? data_[index] : '\0';
     }
 };
 
@@ -679,7 +583,7 @@ public:
      */
     UTF8ConsoleInput& clear() {
         pos = 0;
-        buffer.free();
+        buffer.release();
         return *this;
     }
 
