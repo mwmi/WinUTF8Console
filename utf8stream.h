@@ -39,6 +39,292 @@ public:
 };
 
 /**
+ * @brief 快速字符串类，用于高效处理字符串操作。
+ *
+ * 提供类似于 std::string 的功能，但针对特定场景进行了优化，
+ * 支持动态扩容、移动语义等特性。
+ */
+class FastString {
+    static constexpr size_t default_capacity = 1024; ///< 默认初始容量大小
+    char* data_ = nullptr; ///< 字符串数据指针
+    size_t size_ = 0; ///< 当前字符串长度（不含结尾'\0'）
+    size_t capacity_ = 0; ///< 当前分配的内存容量
+
+    /**
+     * @brief 扩容函数，确保至少能容纳指定容量的内容。
+     *
+     * 新容量会根据当前容量翻倍增长，并满足最小容量要求。
+     * 如果新容量小于默认容量，则使用默认容量。
+     * 最终调用 reserve 分配新的空间。
+     *
+     * @param min_capacity 需要保证的最小容量
+     */
+    void grow(const size_t min_capacity) {
+        size_t new_capacity = capacity_ * 2;
+        if (new_capacity < default_capacity) new_capacity = default_capacity;
+        if (new_capacity < min_capacity) new_capacity = min_capacity;
+        reserve(new_capacity);
+    }
+
+public:
+    /**
+     * @brief 构造一个空的 FastString 对象。
+     */
+    FastString() = default;
+
+    /**
+     * @brief 使用 C 风格字符串构造 FastString。
+     *
+     * 根据输入字符串长度决定初始容量。如果长度大于等于默认容量，
+     * 则设置为 len+1；否则使用默认容量。
+     *
+     * @param str 输入的 C 风格字符串
+     */
+    explicit FastString(const char* str) {
+        const size_t len = strlen(str);
+        if (len == 0) return;
+        capacity_ = len >= default_capacity ? len + 1 : default_capacity;
+        data_ = new char[capacity_]();
+        memcpy(data_, str, len);
+        size_ = len;
+    }
+
+    /**
+     * @brief 使用 std::string 构造 FastString。
+     *
+     * 调用另一个构造函数完成初始化。
+     *
+     * @param str 输入的标准库字符串对象
+     */
+    explicit FastString(const std::string& str) : FastString(str.c_str()) {
+    }
+
+    /**
+     * @brief 拷贝构造函数。
+     *
+     * 复制另一个 FastString 的内容到当前对象中。
+     *
+     * @param other 另一个 FastString 实例
+     */
+    FastString(const FastString& other) : FastString(other.c_str()) {
+    }
+
+    /**
+     * @brief 移动构造函数。
+     *
+     * 将另一个 FastString 的资源转移给当前对象，原对象置为空状态。
+     *
+     * @param other 另一个 FastString 实例（右值引用）
+     */
+    FastString(FastString&& other) noexcept : data_(other.data_), size_(other.size_), capacity_(other.capacity_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+        other.capacity_ = 0;
+    }
+
+    /**
+     * @brief 析构函数，释放占用的内存。
+     */
+    ~FastString() { free(); }
+
+    /**
+     * @brief 显式转换为 std::string 类型。
+     *
+     * 若内部数据有效且非空则创建对应标准库字符串，否则返回空字符串。
+     *
+     * @return 转换后的 std::string 对象
+     */
+    explicit operator std::string() const {
+        return data_ && size_ > 0 ? std::string(data_, size_) : "";
+    }
+
+    /**
+     * @brief 获取当前字符串的实际长度。
+     *
+     * @return 返回当前字符串中的字符数量（不包括终止符 \0）。
+     */
+    [[nodiscard]] size_t size() const { return size_; }
+
+    /**
+     * @brief 获取以 null 结尾的 C 风格字符串表示。
+     *
+     * @return 返回指向内部缓冲区的常量指针或空字符串 ""。
+     */
+    [[nodiscard]] const char* c_str() const { return data_ && size_ > 0 ? data_ : ""; }
+
+    /**
+     * @brief 获取可修改的数据指针。
+     *
+     * @return 返回指向内部缓冲区的非常量指针。
+     */
+    [[nodiscard]] char* data() const { return data_; }
+
+    /**
+     * @brief 判断字符串是否为空。
+     *
+     * @return 如果字符串长度为 0，则返回 true，否则 false。
+     */
+    [[nodiscard]] bool empty() const { return size_ == 0; }
+
+    /**
+     * @brief 大小清零但保留已分配的空间。
+     *
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& clear() {
+        size_ = 0;
+        return *this;
+    }
+
+    /**
+     * @brief 完全释放所占内存并清零相关字段。
+     *
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& free() {
+        delete[] data_;
+        data_ = nullptr;
+        size_ = 0;
+        capacity_ = 0;
+        return *this;
+    }
+
+    /**
+     * @brief 预留指定容量的内存空间。
+     *
+     * 如果请求的新容量不大于现有容量则不做任何事。
+     * 否则重新分配更大的内存并将旧数据复制过去。
+     *
+     * @param new_capacity 请求预留的新容量大小
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& reserve(const size_t new_capacity) {
+        if (new_capacity <= capacity_) return *this;
+        const auto new_data = new char[new_capacity]();
+        memcpy(new_data, data_, size_);
+        delete[] data_;
+        data_ = new_data;
+        capacity_ = new_capacity;
+        return *this;
+    }
+
+    /**
+     * @brief 在末尾追加单个字符。
+     *
+     * 不允许插入空字符('\0')。若当前容量不足将自动扩展。
+     * 插入后更新 size 并在末尾补上 '\0'。
+     *
+     * @param c 待追加的字符
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& push_back(const char c) {
+        if (c == '\0') return *this;
+        if (size_ >= capacity_) grow(size_ + 1);
+        data_[size_++] = c;
+        data_[size_] = '\0';
+        return *this;
+    }
+
+    /**
+     * @brief 追加 C 风格字符串。
+     *
+     * 计算待追加字符串长度，如需扩容则先进行扩展。
+     * 然后拷贝字符串内容并在最后加上 '\0'。
+     *
+     * @param str 待追加的 C 风格字符串
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& append(const char* str) {
+        const size_t len = strlen(str);
+        if (len == 0) return *this;
+        if (size_ + len >= capacity_) grow(size_ + len + 1);
+        memcpy(data_ + size_, str, len);
+        size_ += len;
+        data_[size_] = '\0';
+        return *this;
+    }
+
+    /**
+     * @brief 追加另一个 FastString 内容。
+     *
+     * 直接调用 append(char*) 版本实现。
+     *
+     * @param other 待追加的 FastString 对象
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& append(const FastString& other) {
+        return append(other.c_str());
+    }
+
+    /**
+     * @brief 追加 std::string 内容。
+     *
+     * 直接调用 append(char*) 版本实现。
+     *
+     * @param str 待追加的 std::string 对象
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& append(const std::string& str) {
+        return append(str.c_str());
+    }
+
+    /**
+     * @brief 转换为 std::string 对象。
+     *
+     * @return 返回与当前 FastString 内容一致的 std::string 对象。
+     */
+    [[nodiscard]] std::string to_string() const {
+        return {data_, size_};
+    }
+
+    /**
+     * @brief += 运算符重载：追加字符。
+     *
+     * @param c 待追加的字符
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& operator+=(const char c) {
+        return push_back(c);
+    }
+
+    /**
+     * @brief += 运算符重载：追加C字符串。
+     *
+     * @param str 待追加的 C 风格字符串
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& operator+=(const char* str) {
+        return append(str);
+    }
+
+    /**
+     * @brief += 运算符重载：追加另一个FastString。
+     *
+     * @param other 待追加的 FastString 对象
+     * @return 返回自身引用以便链式调用。
+     */
+    FastString& operator+=(const FastString& other) {
+        return append(other);
+    }
+
+    /**
+     * @brief [] 运算符重载：访问指定索引位置的字符。
+     *
+     * 若索引超出范围抛出异常。
+     *
+     * @param index 字符所在的索引位置
+     * @return 返回该位置上的字符
+     * @throws UException 索引越界时抛出异常
+     */
+    char operator[](const size_t index) const {
+        if (index >= size_) {
+            throw UException("FastString index out of range");
+        }
+        return data_[index];
+    }
+};
+
+/**
  * @brief 将宽字符串(std::wstring)转换为UTF-8编码的字符串(std::string)
  * @param wideStr 输入的宽字符串引用
  * @return std::string 转换后的UTF-8编码字符串，转换失败时返回空字符串
@@ -131,7 +417,7 @@ inline std::wstring u32string_to_wstring(const std::u32string& u32str) {
 inline std::string u32string_to_string(const std::u32string& u32str) {
     if (u32str.empty()) return {};
 
-    std::wstring wideStr = u32string_to_wstring(u32str);
+    const std::wstring wideStr = u32string_to_wstring(u32str);
 
     if (wideStr.empty()) return {};
 
@@ -222,28 +508,26 @@ inline std::u32string string_to_u32string(const std::string& utf8_str) {
 /**
  * 将std::wstring转换为std::u32string
  *
- * @param wstr 输入的宽字符串，假设为UTF-16编码
+ * @param ws 输入的宽字符串，假设为UTF-16编码
  * @return 转换后的UTF-32字符串
  * @throws UException 当UTF-16字符串格式无效时抛出异常
  */
-inline std::u32string wstring_to_u32string(const std::wstring& wstr) {
+inline std::u32string wstring_to_u32string(const std::wstring& ws) {
     std::u32string u32str;
-    u32str.reserve(wstr.size()); // 预分配空间以优化性能
+    u32str.reserve(ws.size()); // 预分配空间以优化性能
 
-    for (size_t i = 0; i < wstr.size(); i++) {
-        const wchar_t ch = wstr[i];
-
+    for (size_t i = 0; i < ws.size(); i++) {
         // 检查是否是基本多文种平面（BMP）字符
-        if (ch < 0xD800 || ch > 0xDFFF) {
+        if (const wchar_t ch = ws[i]; ch < 0xD800 || ch > 0xDFFF) {
             // 单个字符（BMP）
-            u32str += static_cast<char32_t>(ch);
+            u32str += ch;
         } else if (ch <= 0xDBFF) {
             // 高代理项（high surrogate）
-            if (i + 1 >= wstr.size()) {
+            if (i + 1 >= ws.size()) {
                 throw UException("Invalid UTF-16 string: truncated surrogate pair");
             }
 
-            const wchar_t low_surrogate = wstr[i + 1];
+            const wchar_t low_surrogate = ws[i + 1];
             if (low_surrogate < 0xDC00 || low_surrogate > 0xDFFF) {
                 throw UException("Invalid UTF-16 string: missing low surrogate");
             }
@@ -340,7 +624,7 @@ int println(const std::u32string& format, Args... args) {
 class UTF8ConsoleInput {
     static constexpr int chunkSize = 1024; ///< 每次读取的缓冲区大小
     int pos = 0;
-    std::string buffer; ///< 存储读取到的字符数据
+    FastString buffer; ///< 存储读取到的字符数据
 
     /**
      * @brief 判断字符是否为空白字符
@@ -348,7 +632,7 @@ class UTF8ConsoleInput {
      * @return true 如果是空白字符
      * @return false 如果不是空白字符
      */
-    static bool is_whitespace(const int ch) {
+    static bool is_whitespace(const char ch) {
         return ch == ' ' || ch == '\t' || ch == '\n' ||
             ch == '\r' || ch == '\f' || ch == '\v';
     }
@@ -364,7 +648,7 @@ class UTF8ConsoleInput {
      * @return false 读取失败或已到达输入末尾
      */
     bool fillBuffer() {
-        std::string chunk;
+        FastString chunk;
         char ch;
         for (int i = 0; i < chunkSize; i++) {
             if (fread(&ch, sizeof(char), 1, stdin) == 0) break;
@@ -389,13 +673,22 @@ public:
     ~UTF8ConsoleInput() { clear(); }
 
     /**
-     * @brief 清空缓冲区内容
+     * @brief 清空存储内容
      *
      * 将 pos 置零并清空 buffer，使下一次读取重新开始
      */
-    void clear() {
+    UTF8ConsoleInput& clear() {
         pos = 0;
-        buffer.clear();
+        buffer.free();
+        return *this;
+    }
+
+    /**
+     * @brief 清空输入缓冲区内容
+     */
+    UTF8ConsoleInput& flush() {
+        fflush(stdin);
+        return *this;
     }
 
     /**
@@ -404,9 +697,9 @@ public:
      * 如果当前位置超出缓冲区范围，则尝试填充缓冲区；
      * 若仍无法获取字符则返回 EOF，否则返回当前字符并移动 pos 指针
      *
-     * @return int 下一个字符，如果已到达输入末尾则返回 EOF
+     * @return char 下一个字符，如果已到达输入末尾则返回 EOF
      */
-    int get() {
+    char get() {
         if (pos >= buffer.size()) {
             if (!fillBuffer() || pos >= buffer.size()) return EOF;
         }
@@ -440,16 +733,14 @@ public:
 /**
  * @brief 从控制台输入中读取一个由空白字符分隔的单词（UTF-8编码），并以 std::string 形式返回。
  *
- * 该函数会跳过前导空白字符，读取连续的非空白字符组成一个单词，
- * 然后继续跳过后续的空白字符，为下一次读取做准备。
+ * 该函数默认会移除最后一个单词输入后的换行符，与 std::cin 实现略有差异
  *
  * @return std::string 读取到的单词字符串
  */
 template<>
 inline std::string UTF8ConsoleInput::readWord<std::string>() {
-    std::string result;
-    int ch;
-    result.reserve(chunkSize);
+    FastString result;
+    char ch;
     // 跳过前导空白字符
     while ((ch = get()) != EOF && is_whitespace(ch)) {
     }
@@ -457,15 +748,13 @@ inline std::string UTF8ConsoleInput::readWord<std::string>() {
     if (ch != EOF) pos--;
 
     while ((ch = get()) != EOF && !is_whitespace(ch)) {
-        result.push_back(static_cast<char>(ch));
+        result += ch;
     }
 
-    // 跳过单词之间的空白字符
-    while (pos < buffer.size() && (ch = get()) != EOF && is_whitespace(ch)) {
-    }
-    if (!is_whitespace(ch)) pos--;
+    // 回退最后一个空白字符(忽略换行符，如果需和 std::cin 保持一致，请取消ch != '\n' 条件判断)
+    if (ch != EOF && ch != '\n') pos--;
 
-    return result;
+    return result.to_string();
 }
 
 /**
@@ -503,15 +792,14 @@ inline std::u32string UTF8ConsoleInput::readWord<std::u32string>() {
  */
 template<>
 inline std::string UTF8ConsoleInput::readLine<std::string>() {
-    std::string result;
-    int ch;
-    result.reserve(chunkSize);
+    FastString result;
+    char ch;
     while ((ch = get()) != EOF && ch != '\n') {
         if (ch != '\r') {
-            result += static_cast<char>(ch);
+            result += ch;
         }
     }
-    return result;
+    return result.to_string();
 }
 
 /**
@@ -550,17 +838,17 @@ inline std::u32string UTF8ConsoleInput::readLine<std::u32string>() {
 template<>
 inline std::vector<std::string> UTF8ConsoleInput::readLines<std::string>(const bool empty_break, const int break_word) {
     std::vector<std::string> result;
-    std::string line;
+    FastString line;
     while (true) {
-        const int ch = get();
+        const char ch = get();
         if (ch == '\r') continue;
         if (ch == '\n' || ch == break_word) {
             if (empty_break && line.empty()) break;
-            result.push_back(std::move(line));
+            result.push_back(line.to_string());
             line.clear();
             if (ch == break_word) break;
         } else {
-            line.push_back(static_cast<char>(ch));
+            line.push_back(ch);
         }
     }
     return result;
@@ -581,7 +869,7 @@ inline std::vector<std::wstring> UTF8ConsoleInput::readLines<
     std::wstring>(const bool empty_break, const int break_word) {
     std::vector<std::wstring> result;
     for (const auto& line : readLines<std::string>(empty_break, break_word)) {
-        result.push_back(std::move(string_to_wstring(line)));
+        result.push_back(string_to_wstring(line));
     }
     return result;
 }
@@ -601,7 +889,7 @@ inline std::vector<std::u32string> UTF8ConsoleInput::readLines<std::u32string>(
     const bool empty_break, const int break_word) {
     std::vector<std::u32string> result;
     for (const auto& line : readLines<std::string>(empty_break, break_word)) {
-        result.push_back(std::move(string_to_u32string(line)));
+        result.push_back(string_to_u32string(line));
     }
     return result;
 }
@@ -678,11 +966,21 @@ class UTF8ConsoleOutput {
 
 public:
     /**
+     * @brief 刷新 stdout 缓冲区
+     * @return 返回当前对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& flush() {
+        fflush(stdout);
+        return *this;
+    }
+
+    /**
      * @brief 设置是否在每次输出后自动刷新缓冲区，通常在某些调试输出场景下使用
      * @param auto_flush 是否启用自动刷新
      */
-    void setAutoFlush(const bool auto_flush) {
+    UTF8ConsoleOutput& setAutoFlush(const bool auto_flush) {
         should_flush = auto_flush;
+        return *this;
     }
 
     /**
@@ -692,15 +990,6 @@ public:
      */
     UTF8ConsoleOutput& operator<<(const std::string& str) {
         return _puts(str.c_str());
-    }
-
-    /**
-     * @brief 刷新 stdout 缓冲区
-     * @return 返回当前对象的引用，支持链式调用
-     */
-    UTF8ConsoleOutput& flush() {
-        fflush(stdout);
-        return *this;
     }
 
     /**
@@ -749,9 +1038,7 @@ public:
      * @return 返回当前对象的引用，支持链式调用
      */
     UTF8ConsoleOutput& operator<<(const wchar_t* wideStr) {
-        if (wideStr) {
-            return _puts(wstring_to_string(wideStr).c_str());
-        }
+        if (wideStr) return _puts(wstring_to_string(wideStr).c_str());
         return *this;
     }
 
@@ -783,18 +1070,6 @@ public:
     }
 
     /**
-     * @brief 重载输出流操作符，将算术类型的值转换为字符串并输出到UTF8控制台
-     * @tparam T 输入值的类型，必须是算术类型
-     * @param value 要输出的算术值
-     * @return 返回当前UTF8ConsoleOutput对象的引用，支持链式调用
-     */
-    template<typename T>
-    UTF8ConsoleOutput& operator<<(T value) {
-        static_assert(std::is_arithmetic_v<T>, "Only arithmetic types are supported");
-        return _puts(std::to_string(value).c_str());
-    }
-
-    /**
      * @brief 流式输出操作符 - 布尔值
      * @param value 要输出的布尔值
      * @return 返回当前对象的引用，支持链式调用
@@ -820,6 +1095,105 @@ public:
      */
     UTF8ConsoleOutput& operator<<(UTF8ConsoleOutput& (*pfun)(UTF8ConsoleOutput&)) {
         return pfun(*this);
+    }
+
+    /**
+     * 重载左移运算符，用于输出float类型数值
+     * @param value 要输出的float类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const float value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出double类型数值
+     * @param value 要输出的double类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const double value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出long double类型数值
+     * @param value 要输出的long double类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const long double value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出int类型数值
+     * @param value 要输出的int类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const int value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出unsigned int类型数值
+     * @param value 要输出的unsigned int类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const unsigned int value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出long类型数值
+     * @param value 要输出的long类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const long value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出unsigned long类型数值
+     * @param value 要输出的unsigned long类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const unsigned long value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出long long类型数值
+     * @param value 要输出的long long类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const long long value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出unsigned long long类型数值
+     * @param value 要输出的unsigned long long类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const unsigned long long value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出short类型数值
+     * @param value 要输出的short类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const short value) {
+        return _puts(std::to_string(value).c_str());
+    }
+
+    /**
+     * 重载左移运算符，用于输出unsigned short类型数值
+     * @param value 要输出的unsigned short类型数值
+     * @return 返回UTF8ConsoleOutput对象的引用，支持链式调用
+     */
+    UTF8ConsoleOutput& operator<<(const unsigned short value) {
+        return _puts(std::to_string(value).c_str());
     }
 
     /**
