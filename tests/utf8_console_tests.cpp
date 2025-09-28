@@ -14,16 +14,16 @@ void test_string_conversions() {
     
     // 测试宽字符串到UTF-8的转换
     std::wstring wstr = L"Hello 世界";
-    std::string utf8_str = wstring_to_string(wstr);
-    std::wstring converted_back = string_to_wstring(utf8_str);
+    std::string utf8_str = UConverter::convert<std::string>(wstr);
+    std::wstring converted_back = UConverter::convert<std::wstring>(utf8_str);
     
     // 测试UTF-32到UTF-8的转换
     std::u32string u32str = U"Hello 世界";
-    std::string utf8_from_u32 = u32string_to_string(u32str);
-    std::u32string converted_u32_back = string_to_u32string(utf8_from_u32);
+    std::string utf8_from_u32 = UConverter::convert<std::string>(u32str);
+    std::u32string converted_u32_back = UConverter::convert<std::u32string>(utf8_from_u32);
     
     // 测试UTF-32到宽字符串的转换
-    std::wstring wstr_from_u32 = u32string_to_wstring(u32str);
+    std::wstring wstr_from_u32 = UConverter::convert<std::wstring>(u32str);
     
     ucout << "字符串转换功能测试完成" << uendl;
 }

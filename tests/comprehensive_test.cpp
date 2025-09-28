@@ -16,8 +16,8 @@ int main() {
         ucout << "1. 测试字符串转换功能..." << uendl;
         
         std::string str = "abc测试😁😂😀";
-        std::wstring wstr = string_to_wstring(str);
-        std::string converted_back = wstring_to_string(wstr);
+        std::wstring wstr = UConverter::convert<std::wstring>(str);
+        std::string converted_back = UConverter::convert<std::string>(wstr);
 
         if (str == converted_back) {
             ucout << "   字符串转换功能正常" << uendl;
@@ -29,8 +29,8 @@ int main() {
         // 2. 测试宽字符转换功能
         ucout << "3. 测试宽字符转换功能..." << uendl;
         wstr = L"abc测试😁😂😀";
-        std::u32string u32str = wstring_to_u32string(wstr);
-        std::wstring converted_wstr_back = u32string_to_wstring(u32str);
+        std::u32string u32str = UConverter::convert<std::u32string>(wstr);
+        std::wstring converted_wstr_back = UConverter::convert<std::wstring>(u32str);
 
         if (wstr == converted_wstr_back) {
             ucout << "   宽字符转换功能正常" << uendl;
@@ -43,8 +43,8 @@ int main() {
         ucout << "2. 测试UTF-32转换功能..." << uendl;
         
         u32str = U"abc测试😁😂😀";
-        std::string utf8_from_u32 = u32string_to_string(u32str);
-        std::u32string converted_u32_back = string_to_u32string(utf8_from_u32);
+        std::string utf8_from_u32 = UConverter::convert<std::string>(u32str);
+        std::u32string converted_u32_back = UConverter::convert<std::u32string>(utf8_from_u32);
         
         if (u32str == converted_u32_back) {
             ucout << "   UTF-32转换功能正常" << uendl;
