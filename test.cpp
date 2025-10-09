@@ -1,6 +1,7 @@
 #include "utf8stream.h"
 
 int main() {
+    ucout << sizeof(char32_t) / sizeof(char) << uendl;
     ucout << "===测试不同类型的字符串输出显示===" << uendl << uendl;
 
     auto s = "😁😀😂 123 一二三 abc";
