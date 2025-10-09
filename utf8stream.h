@@ -315,28 +315,6 @@ class UConverter {
         return encode_(0xFFFD, dest);
     }
 
-    // ReSharper disable once CppDFAUnreachableFunctionCall
-    static UINT32 get_code_point_(const wchar_t*& src, const wchar_t* end) {
-        if (src >= end) return 0xFFFD;
-
-        // UTF-16系统：处理代理对
-        const auto first_unit = static_cast<UINT32>(*src++);
-
-        // BMP字符快速路径
-        if (first_unit < 0xD800 || first_unit > 0xDFFF) return first_unit;
-
-        // 高位代理
-        if (first_unit <= 0xDBFF && src < end) {
-            if (const auto second_unit = static_cast<UINT32>(*src); second_unit >= 0xDC00 && second_unit <= 0xDFFF) {
-                src++; // 消耗低位代理
-                return 0x10000 + ((first_unit - 0xD800) << 10) + (second_unit - 0xDC00);
-            }
-        }
-
-        // 孤立的低位代理
-        return 0xFFFD;
-    }
-
     static void convert_(const std::string& str, std::wstring& result) {
         if (str.empty()) return;
         const size_t len = str.size();
@@ -438,14 +416,38 @@ class UConverter {
         result.resize(dest_len);
     }
 
+    // ReSharper disable once CppDFAUnreachableFunctionCall
+    static UINT32 get_code_point_(const wchar_t*& src, const wchar_t* end) {
+        if (src >= end) return 0xFFFD;
+
+        // UTF-16系统：处理代理对
+        const auto first_unit = static_cast<UINT32>(*src++);
+
+        // BMP字符快速路径
+        if (first_unit < 0xD800 || first_unit > 0xDFFF) return first_unit;
+
+        // 高位代理
+        if (first_unit <= 0xDBFF && src < end) {
+            if (const auto second_unit = static_cast<UINT32>(*src); second_unit >= 0xDC00 && second_unit <= 0xDFFF) {
+                src++; // 消耗低位代理
+                return 0x10000 + ((first_unit - 0xD800) << 10) + (second_unit - 0xDC00);
+            }
+        }
+
+        // 孤立的低位代理
+        return 0xFFFD;
+    }
+
     static void convert_(const std::wstring& wstr, std::string& result) {
         if (wstr.empty()) return;
 
+        const size_t len = wstr.size();
+
         const wchar_t* src = wstr.data();
-        const wchar_t* end = src + wstr.size();
+        const wchar_t* end = src + len;
 
         // 预分配最大可能空间
-        result.resize(wstr.size() * sizeof(wchar_t) / sizeof(char));
+        result.resize(len * 3);
 
         char* dest = result.data();
         size_t dest_len = 0;
@@ -467,7 +469,7 @@ class UConverter {
         const char32_t* end = src + len;
 
         // 预分配最大可能空间
-        result.resize(len * sizeof(char32_t) / sizeof(char));
+        result.resize(len * 4);
 
         char* dest = result.data();
         size_t dest_len = 0;
@@ -751,7 +753,7 @@ inline std::vector<std::string> UTF8ConsoleInput::readLines<std::string>(const b
  */
 template<typename T>
 std::vector<T> UTF8ConsoleInput::readLines(const bool empty_break, const int break_word) {
-    std::vector<std::string> lines = readLines<std::string>(empty_break, break_word);
+    const std::vector<std::string> lines = readLines<std::string>(empty_break, break_word);
     if (lines.empty()) return {};
     std::vector<T> result;
     result.reserve(lines.size());
